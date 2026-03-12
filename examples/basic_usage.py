@@ -5,7 +5,13 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from rna_assessment import MCAnnotateRunner, calculate_assessment, normalize_structure
+from rna_assessment import (
+    MCAnnotateRunner,
+    calculate_assessment_from_prepared,
+    describe_prepared_pair,
+    normalize_structure,
+    prepare_structure_pair,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,14 +35,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Predicted PDB file.",
     )
-    parser.add_argument("--reference-index", type=Path, default=data_dir / "14_solution_0.index")
-    parser.add_argument("--prediction-index", type=Path, default=data_dir / "14_ChenPostExp_2.index")
+    parser.add_argument("--reference-index", type=Path)
+    parser.add_argument("--prediction-index", type=Path)
     parser.add_argument("--reference-annotation", type=Path)
     parser.add_argument("--prediction-annotation", type=Path)
     parser.add_argument("--mc-annotate", type=Path)
     parser.add_argument("--annotation-cache-dir", type=Path)
     parser.add_argument("--normalize-reference", action="store_true")
     parser.add_argument("--inclusion-radius", type=float, default=15.0)
+    parser.add_argument("--per-residue", action="store_true")
     return parser
 
 
@@ -69,20 +76,30 @@ def main() -> None:
         cache_dir=args.annotation_cache_dir,
         annotation_overrides=annotation_overrides or None,
     )
-    result = calculate_assessment(
+    prepared = prepare_structure_pair(
         reference_path,
         args.reference_index,
         args.prediction,
         args.prediction_index,
-        annotator=annotator,
-        inclusion_radius=args.inclusion_radius,
     )
+    result = calculate_assessment_from_prepared(
+        prepared,
+        annotator=annotator,
+        pvalue_mode="-",
+        inclusion_radius=args.inclusion_radius,
+        include_per_residue=args.per_residue,
+    )
+    description = describe_prepared_pair(prepared, args.prediction, reference_path)
 
     print(
         json.dumps(
             {
                 "reference": str(reference_path),
                 "prediction": str(args.prediction),
+                "native_index": description.native_index,
+                "prediction_index": description.prediction_index,
+                "matched_residues": description.matched_residues,
+                "chain_mappings": asdict(description)["chain_mappings"],
                 "metrics": asdict(result),
             },
             indent=2,

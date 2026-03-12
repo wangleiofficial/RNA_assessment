@@ -23,3 +23,7 @@ class ToolNotAvailableError(RNAAssessmentError):
 
 class MetricCalculationError(RNAAssessmentError):
     """Raised when a metric cannot be computed from the provided structures."""
+
+
+class ManifestFormatError(RNAAssessmentError):
+    """Raised when a benchmark manifest is missing required fields or uses an unsupported format."""

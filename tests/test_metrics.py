@@ -56,11 +56,16 @@ def test_lddt_self_comparison_is_one() -> None:
         DATA_DIR / "14_solution_0.index",
         DATA_DIR / "14_solution_0.pdb",
         DATA_DIR / "14_solution_0.index",
+        include_per_residue=True,
     )
 
     assert result.lddt == pytest.approx(1.0, abs=1e-8)
     assert result.evaluated_atoms > 0
     assert result.evaluated_pairs > 0
+    assert result.per_residue is not None
+    assert len(result.per_residue) == 60
+    assert all(item.lddt == pytest.approx(1.0, abs=1e-8) for item in result.per_residue)
+    assert all(item.local_rmsd == pytest.approx(0.0, abs=1e-8) for item in result.per_residue)
 
 
 def test_assessment_returns_combined_metrics() -> None:
@@ -69,6 +74,7 @@ def test_assessment_returns_combined_metrics() -> None:
         DATA_DIR / "14_solution_0.index",
         DATA_DIR / "14_ChenPostExp_2.pdb",
         DATA_DIR / "14_ChenPostExp_2.index",
+        include_per_residue=True,
     )
 
     assert result.rmsd == pytest.approx(7.751173243045826)
@@ -77,3 +83,10 @@ def test_assessment_returns_combined_metrics() -> None:
     assert result.lddt == pytest.approx(0.6126129382795444)
     assert result.lddt_evaluated_atoms == 1287
     assert result.lddt_evaluated_pairs == 338908
+    assert result.per_residue is not None
+    assert len(result.per_residue) == 60
+    assert result.per_residue[0].native_chain == "A"
+    assert result.per_residue[0].prediction_chain == "U"
+    assert result.per_residue[0].matched_atoms > 0
+    assert 0.0 <= result.per_residue[0].lddt <= 1.0
+    assert result.per_residue[0].local_rmsd is not None

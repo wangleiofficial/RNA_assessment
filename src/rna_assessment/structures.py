@@ -86,6 +86,54 @@ class PDBStructure:
     def res_sequence(self) -> list[object]:
         return [self._residues[index].residue for index in self._selected_indices]
 
+    def selected_records(self) -> list[tuple[int, ResidueRecord]]:
+        return [(index, self._residues[index]) for index in self._selected_indices]
+
+    def chain_records(self) -> dict[str, list[tuple[int, ResidueRecord]]]:
+        chains: dict[str, list[tuple[int, ResidueRecord]]] = {}
+        for index, record in self.selected_records():
+            chains.setdefault(record.chain, []).append((index, record))
+        return chains
+
+    def with_selected_indices(self, selected_indices: list[int]) -> "PDBStructure":
+        clone = object.__new__(PDBStructure)
+        clone._pdb_file = self._pdb_file
+        clone._structure = self._structure
+        clone._residues = self._residues
+        clone._selected_indices = list(selected_indices)
+        clone._interaction_cache = {}
+        clone._residue_index = {
+            key: [value[0], None] for key, value in self._residue_index.items()
+        }
+        for rank, absolute_index in enumerate(clone._selected_indices):
+            clone._residue_index[self._residues[absolute_index].key()][1] = rank
+        return clone
+
+    def index_spec(self) -> str:
+        ranges: list[str] = []
+        start_record: ResidueRecord | None = None
+        last_record: ResidueRecord | None = None
+        count = 0
+
+        for _, record in self.selected_records():
+            if (
+                start_record is None
+                or last_record is None
+                or record.chain != last_record.chain
+                or record.pos != last_record.pos + 1
+            ):
+                if start_record is not None:
+                    ranges.append(f"{start_record.chain}:{start_record.pos}:{count}")
+                start_record = record
+                count = 1
+            else:
+                count += 1
+            last_record = record
+
+        if start_record is not None:
+            ranges.append(f"{start_record.chain}:{start_record.pos}:{count}")
+        return ",".join(ranges)
+
     def rank_of(self, chain: str, pos: int) -> int | None:
         entry = self._residue_index.get(f"{chain}:{pos}")
         return None if entry is None else entry[1]
