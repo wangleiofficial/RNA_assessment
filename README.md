@@ -1,67 +1,93 @@
-# Basic RNA 3D structure comparison metrics used in RNA-Puzzles assessment. 
----
+# RNA Assessment
 
-This git includes:  
+RNA 三维结构评估代码库，整理后提供三类稳定能力：
 
-* an RNA structure normalization tool used in RNA-Puzzles.
-* the RNA 3D structure comparison metrics used in RNA-Puzzles assessment, including RMSD (all-atom), P value, Interaction Network Fidelity and Deformation Index. 
+- PDB 归一化
+- 基于索引片段的 RMSD 与 P-value 计算
+- 基于 MC-Annotate 输出的 Interaction Network Fidelity / Deformation Index
 
-## Installation
-To install the package:    
-`git clone https://github.com/RNA-Puzzles/RNA_assessment.git`    
-`cd RNA_assessment`    
-`python setup.py install`    
+这次重构主要解决了原仓库的几个核心问题：源码、示例、构建产物和第三方二进制混放；Python 2/3 语法混杂；外部工具在导入阶段就被强绑定；README 声明的部分能力并没有形成可运行的软件接口。
 
+## 安装
 
-## Dependency
-This package depends on `biopython`, `rna-tools`   
-To install:   
-`pip install biopython`，  
-`pip install rna-tools`,  
-OpenStructure for lDDT calculations.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+```
 
-If need to calculate the Interaction Network Fidelity, it needs to call [`MC-annotate`](https://major.iric.ca/MajorLabEn/MC-Tools.html).    
-Please download the binary execution from the website and coordinate the directory for it at the top line `MCAnnotate_bin=` of the mcannotate.py script. 
+安装完成后可以直接用 CLI：
 
-If need to calculate the Local Distance Difference Test (lDDT), it needs to call [OpenStructure](https://openstructure.org/download).    
-The lddt folder used in the current script is in [Google Driver](https://drive.google.com/drive/folders/1ZuugpvBi90LG9nW3RZ9BIbxOMDUqxfmw?usp=sharing), which needs to be fetched and extracted in the same directory as example.ipynb
+```bash
+rna-assessment rmsd \
+  examples/data/14_solution_0.pdb \
+  examples/data/14_solution_0.index \
+  examples/data/14_ChenPostExp_2.pdb \
+  examples/data/14_ChenPostExp_2.index
+```
 
+也可以用 Python API：
 
-If need to calculate the Atomic Rotationally Equivariant Scorer (ARES), it needs to call [ARES](https://www.science.org/doi/10.1126/science.abe5650
-        
-        
-        
-        )
+```python
+from pathlib import Path
 
-If need to calculate the Clash score, it needs to call [MolProbity](http://molprobity.biochem.duke.edu/)
-        
-         
-# Repository Structure
-This repository contains the codes necessary to replicate all figures from Puzzles Round V. It includes:
+from rna_assessment import calculate_interaction_network_fidelity, calculate_rmsd, normalize_structure
 
-- `The figures_reproducibility.ipynb notebook` : this file can generate all the figures found in the Puzzles, with scores holding the original data for the figures. For details on how to generate data using various metrics, please refer to https://github.com/RNA-Puzzles/RNA_assessment.
-- `data`: This folder contains the input files necessary for structure normalization.
-- `example`: This folder contains the input and output files for example.ipynb/example.py.
-- `RNA_normalizer or RNA_normalizer.egg-info or build`: This folder contains the packaged scripts imported in example.ipynb/example.py
-- `example.py or example.ipynb`: The folder contains example.py or example.ipynb, which are specific runnable examples of Python scripts or Jupyter notebooks.
+data_dir = Path("examples/data")
+output_dir = Path("examples/output")
+output_dir.mkdir(exist_ok=True)
 
-# how to use
-A detailed introduction can be found in the example [notebook](https://github.com/RNA-Puzzles/RNA_assessment/blob/master/example.ipynb) or the example [script](https://github.com/RNA-Puzzles/RNA_assessment/blob/master/example/example.py). 
+normalize_structure(
+    data_dir / "14_solution_0.pdb",
+    output_dir / "14_solution_0.normalized.pdb",
+)
 
+rmsd = calculate_rmsd(
+    data_dir / "14_solution_0.pdb",
+    data_dir / "14_solution_0.index",
+    data_dir / "14_ChenPostExp_2.pdb",
+    data_dir / "14_ChenPostExp_2.index",
+)
+print(rmsd)
 
-# Citation
-For citation and further information, please refer to the following:
+inf = calculate_interaction_network_fidelity(
+    data_dir / "14_solution_0.pdb",
+    data_dir / "14_solution_0.index",
+    data_dir / "14_ChenPostExp_2.pdb",
+    data_dir / "14_ChenPostExp_2.index",
+)
+print(inf)
+```
 
-Bu, F., Adam, Y., Adamiak, R.W. et al. RNA-Puzzles Round V: blind predictions of 23 RNA structures. Nat Methods (2024). https://doi.org/10.1038/s41592-024-02543-9
-        
-        
-        
-        .
+## 项目布局
 
-Thank you for your interest in our work. We hope you find the code and resources provided here useful in reproducing and building upon the findings of the RNA-Puzzles Round V.
+```text
+src/rna_assessment/    核心包
+src/RNA_normalizer/    旧包名兼容层
+examples/data/         样例输入与预计算 .mcout
+third_party/bin/       可执行二进制
+third_party/lib/       可选 jar 包
+tests/                 自动化测试
+```
 
-Hajdin et al., RNA (7) 16, 2010  
-RNA. 2009 Oct; 15(10): 1875–1885.
+## 第三方工具策略
 
-# Issues
-If you encounter any issues or have questions about the code or analysis, please open an issue on the GitHub repository.
+核心流程只依赖 `biopython`。
+
+`MC-Annotate` 只在计算 INF 且缺少同目录 `.mcout` 文件时才会被调用。仓库保留了历史 Linux 二进制在 `third_party/bin/MC-Annotate`，这对 Linux 环境可直接用；在 macOS 上通常不可执行，因此示例和测试默认复用仓库内预计算的 `.mcout` 文件，不再要求用户先手工改源码路径。
+
+`MCQ` jar 被保留在 `third_party/lib/`，但运行它仍然需要本机有 Java Runtime。`GDT`、`lDDT`、`ARES`、`MolProbity` 在旧仓库里并没有形成可维护的集成实现，这次重构没有继续保留伪入口，而是把范围收敛到当前真正可验证的核心指标。
+
+## 示例
+
+可以直接运行：
+
+```bash
+python examples/basic_usage.py
+```
+
+## 测试
+
+```bash
+pytest
+```

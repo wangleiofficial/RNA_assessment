@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+import pytest
+
+from rna_assessment import MCAnnotateRunner, ToolNotAvailableError
+
+from .conftest import DATA_DIR
+
+
+def test_precomputed_annotation_is_used_without_binary() -> None:
+    runner = MCAnnotateRunner(binary_path="/definitely/missing")
+    result = runner.load(DATA_DIR / "14_solution_0.pdb")
+
+    assert len(result.residues) > 0
+    assert len(result.interactions) > 0
+
+
+def test_missing_annotation_raises_without_available_binary(tmp_path) -> None:
+    pdb_path = tmp_path / "model.pdb"
+    pdb_path.write_text((DATA_DIR / "14_solution_0.pdb").read_text(encoding="utf-8"), encoding="utf-8")
+
+    runner = MCAnnotateRunner(binary_path=tmp_path / "missing-binary")
+    with pytest.raises(ToolNotAvailableError):
+        runner.load(pdb_path)
