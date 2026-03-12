@@ -21,7 +21,7 @@ C2' C2'
 C2* C2'
 C3' C3'
 C3* C3'
-C4' C4' 
+C4' C4'
 C4* C4'
 C5' C5'
 C5* C5'
@@ -62,7 +62,7 @@ C61 -
 N61 -
 # non canonical atoms
 BR  -
-#ignore atoms
+# ignore atoms
 1H   -
 1H2  -
 1H2' -
@@ -85,7 +85,7 @@ CD1  -
 CD2  -
 CE1  -
 CE2  -
-CG   - 
+CG   -
 CZ   -
 H1   -
 H1'  -
@@ -143,4 +143,3 @@ OXT  -
 PA   -
 PB   -
 PC   -
-

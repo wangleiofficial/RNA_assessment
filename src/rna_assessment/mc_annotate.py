@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+from .exceptions import ToolNotAvailableError
+
+
+@dataclass(frozen=True)
+class RawInteraction:
+    type: str
+    chain_a: str
+    pos_a: int
+    nt_a: str
+    chain_b: str
+    pos_b: int
+    nt_b: str
+    extra_1: str
+    extra_2: str
+    extra_3: str
+
+
+@dataclass(frozen=True)
+class MCAnnotateResult:
+    residues: list[tuple[str, str, str]]
+    interactions: list[RawInteraction]
+
+
+class MCAnnotateRunner:
+    _PAIR_PATTERN = re.compile(
+        r"^([A-Z]|'[0-9]'|)(\d+)-([A-Z]|'[0-9]'|)(\d+) : (\w+)-(\w+) ([\w']+)/([\w']+)"
+        r"(?:.*)pairing( (parallel|antiparallel) (cis|trans))"
+    )
+    _STACK_PATTERN = re.compile(
+        r"^([A-Z]|'[0-9]'|)(\d+)-([A-Z]|'[0-9]'|)(\d+) :.*(inward|upward|downward|outward).*"
+    )
+
+    def __init__(self, binary_path: str | Path | None = None, cache_dir: str | Path | None = None):
+        self.binary_path = Path(binary_path) if binary_path else None
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self._cache: dict[Path, MCAnnotateResult] = {}
+
+    def cache_key(self, pdb_file: str | Path) -> str:
+        return f"mc_annotate::{self.annotation_path_for(pdb_file)}"
+
+    def annotation_path_for(self, pdb_file: str | Path) -> Path:
+        pdb_path = Path(pdb_file)
+        cache_dir = self.cache_dir or pdb_path.parent
+        return cache_dir / f"{pdb_path.name}.mcout"
+
+    def resolve_binary(self) -> Path | None:
+        candidates = [
+            self.binary_path,
+            Path(os.environ["RNA_ASSESSMENT_MC_ANNOTATE"])
+            if "RNA_ASSESSMENT_MC_ANNOTATE" in os.environ
+            else None,
+            _repository_root() / "third_party" / "bin" / "MC-Annotate",
+            _repository_root() / "MC-Annotate",
+        ]
+        for candidate in candidates:
+            if candidate and candidate.is_file():
+                return candidate
+        return None
+
+    def load(self, pdb_file: str | Path) -> MCAnnotateResult:
+        annotation_path = self.annotation_path_for(pdb_file)
+        cached = self._cache.get(annotation_path)
+        if cached is not None:
+            return cached
+
+        if not annotation_path.exists():
+            self._generate_annotation(pdb_file, annotation_path)
+
+        result = self.parse(annotation_path)
+        self._cache[annotation_path] = result
+        return result
+
+    def indexed_interactions(self, structure) -> list[tuple[str, int, int, str]]:
+        cache_key = self.cache_key(structure.pdb_file)
+        cached = structure.cached_interactions(cache_key)
+        if cached is not None:
+            return cached
+
+        annotation = self.load(structure.pdb_file)
+        indexed: list[tuple[str, int, int, str]] = []
+        for interaction in annotation.interactions:
+            rank_a = structure.rank_of(interaction.chain_a, interaction.pos_a)
+            rank_b = structure.rank_of(interaction.chain_b, interaction.pos_b)
+            if rank_a is None or rank_b is None:
+                continue
+
+            if interaction.type == "STACK":
+                extra = interaction.extra_1
+            else:
+                extra = f"{interaction.extra_1}{interaction.extra_2}"
+            indexed.append((interaction.type, min(rank_a, rank_b), max(rank_a, rank_b), extra))
+
+        structure.set_cached_interactions(cache_key, indexed)
+        return indexed
+
+    def parse(self, annotation_path: str | Path) -> MCAnnotateResult:
+        residues: list[tuple[str, str, str]] = []
+        interactions: list[RawInteraction] = []
+        state = "out"
+        model_count = 0
+
+        for raw_line in Path(annotation_path).read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+
+            if line.startswith("Residue conformations"):
+                if model_count == 0:
+                    state = "residue"
+                    model_count += 1
+                    continue
+                break
+
+            if line.startswith("Base-pairs"):
+                state = "pair"
+                continue
+
+            if line.startswith("Adjacent stackings") or line.startswith("Non-Adjacent stackings"):
+                state = "stack"
+                continue
+
+            if line.endswith("----------"):
+                state = "out"
+                continue
+
+            interaction: RawInteraction | None = None
+            if state == "residue":
+                parts = line.split()
+                if len(parts) == 5:
+                    residues.append((parts[0][0], parts[0][1:], parts[2]))
+            elif state == "pair":
+                match = self._PAIR_PATTERN.match(line)
+                if match:
+                    interaction = self._convert_pair(match.groups())
+            elif state == "stack":
+                match = self._STACK_PATTERN.match(line)
+                if match:
+                    interaction = self._convert_stack(match.groups())
+
+            if interaction is not None:
+                interactions.append(interaction)
+
+        return MCAnnotateResult(residues=residues, interactions=interactions)
+
+    def _generate_annotation(self, pdb_file: str | Path, annotation_path: Path) -> None:
+        binary = self.resolve_binary()
+        if binary is None:
+            raise ToolNotAvailableError(
+                "MC-Annotate is not available. Provide a precomputed '.mcout' file or set "
+                "'RNA_ASSESSMENT_MC_ANNOTATE'."
+            )
+        annotation_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            result = subprocess.run(
+                [str(binary), str(pdb_file)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            raise ToolNotAvailableError(
+                f"Failed to execute MC-Annotate at '{binary}'. This repository currently bundles "
+                "a Linux binary, so macOS users must provide a compatible executable or reuse "
+                "precomputed '.mcout' files."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            raise ToolNotAvailableError(
+                f"MC-Annotate failed for '{pdb_file}': {exc.stderr.strip() or exc.stdout.strip()}"
+            ) from exc
+        annotation_path.write_text(result.stdout, encoding="utf-8")
+
+    def _convert_pair(self, groups: tuple[str, ...]) -> RawInteraction | None:
+        int_a = groups[6][0].upper()
+        int_b = groups[7][0].upper()
+
+        if int_a not in {"W", "H", "S"} or int_b not in {"W", "H", "S"}:
+            return None
+
+        chain_a = groups[0].replace("'", "")
+        pos_a = int(groups[1])
+        nt_a = groups[4]
+
+        chain_b = groups[2].replace("'", "")
+        pos_b = int(groups[3])
+        nt_b = groups[5]
+
+        interaction_type = groups[10].lower()
+        pair_name = "PAIR_2D" if f"{interaction_type}{int_a}{int_b}" == "cisWW" else "PAIR_3D"
+
+        if ((chain_a == chain_b) and (pos_a < pos_b)) or (chain_a < chain_b):
+            return RawInteraction(
+                type=pair_name,
+                chain_a=chain_a,
+                pos_a=pos_a,
+                nt_a=nt_a,
+                chain_b=chain_b,
+                pos_b=pos_b,
+                nt_b=nt_b,
+                extra_1=f"{int_a}{int_b}",
+                extra_2=interaction_type,
+                extra_3="",
+            )
+        return RawInteraction(
+            type=pair_name,
+            chain_a=chain_b,
+            pos_a=pos_b,
+            nt_a=nt_b,
+            chain_b=chain_a,
+            pos_b=pos_a,
+            nt_b=nt_a,
+            extra_1=f"{int_a}{int_b}",
+            extra_2=interaction_type,
+            extra_3="",
+        )
+
+    def _convert_stack(self, groups: tuple[str, ...]) -> RawInteraction:
+        return RawInteraction(
+            type="STACK",
+            chain_a=groups[0].replace("'", ""),
+            pos_a=int(groups[1]),
+            nt_a="",
+            chain_b=groups[2].replace("'", ""),
+            pos_b=int(groups[3]),
+            nt_b="",
+            extra_1=groups[4],
+            extra_2="",
+            extra_3="",
+        )
+
+
+class MCAnnotate(MCAnnotateRunner):
+    """Compatibility alias for the legacy class name."""
+
+
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[2]

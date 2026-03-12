@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rna-assessment"
+version = "0.1.0"
+description = "RNA structure normalization and assessment metrics."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "RNA-Puzzles contributors" }]
+dependencies = ["biopython>=1.83"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+rna-assessment = "rna_assessment.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rna_assessment = ["data/*.list"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
