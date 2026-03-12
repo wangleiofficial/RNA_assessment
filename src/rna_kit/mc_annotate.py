@@ -4,8 +4,10 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from .exceptions import ToolExecutionError, ToolResolutionError
+from .structures import prepare_external_structure_input
 from .tools import default_tool_registry
 
 
@@ -159,13 +161,27 @@ class MCAnnotateRunner:
                 "'RNA_KIT_MC_ANNOTATE'."
             )
         annotation_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path = Path(pdb_file)
         try:
-            result = subprocess.run(
-                [str(binary), str(pdb_file)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            if source_path.suffix.lower() in {".cif", ".mmcif"}:
+                with TemporaryDirectory(prefix="rna-kit-mc-annotate-") as temp_dir:
+                    prepared_input = prepare_external_structure_input(
+                        source_path,
+                        Path(temp_dir) / f"{source_path.stem}.pdb",
+                    )
+                    result = subprocess.run(
+                        [str(binary), str(prepared_input)],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+            else:
+                result = subprocess.run(
+                    [str(binary), str(source_path)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
         except OSError as exc:
             raise ToolExecutionError(
                 f"Failed to execute MC-Annotate at '{binary}'. This repository currently bundles "
@@ -174,7 +190,7 @@ class MCAnnotateRunner:
             ) from exc
         except subprocess.CalledProcessError as exc:
             raise ToolExecutionError(
-                f"MC-Annotate failed for '{pdb_file}': {exc.stderr.strip() or exc.stdout.strip()}"
+                f"MC-Annotate failed for '{source_path}': {exc.stderr.strip() or exc.stdout.strip()}"
             ) from exc
         annotation_path.write_text(result.stdout, encoding="utf-8")
 

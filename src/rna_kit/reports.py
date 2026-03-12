@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from .benchmark import BenchmarkEntry, describe_prepared_pair
+from .benchmark import BenchmarkEntry, BenchmarkResult, describe_prepared_pair
 from .exceptions import ReportGenerationError, SchemaValidationError
 from .metrics import AssessmentResult, LDDTResult, PreparedStructurePair, ResidueAssessment
 from .secondary_structure import (
@@ -54,6 +54,15 @@ class SecondaryStructureReportDocument:
     artifacts: dict[str, str] | None = None
 
 
+@dataclass(frozen=True)
+class BenchmarkReportDocument:
+    metadata: ReportMetadata
+    result: BenchmarkResult
+    tool_statuses: tuple[ToolStatus, ...]
+    warnings: tuple[str, ...] = ()
+    artifacts: dict[str, str] | None = None
+
+
 def build_assessment_report_document(
     prepared: PreparedStructurePair,
     assessment: AssessmentResult,
@@ -94,7 +103,25 @@ def build_secondary_structure_report_document(
     )
 
 
-def write_report_json(document: AssessmentReportDocument | SecondaryStructureReportDocument, output_file: str | Path) -> Path:
+def build_benchmark_report_document(
+    result: BenchmarkResult,
+    tool_statuses: tuple[ToolStatus, ...] = (),
+    warnings: tuple[str, ...] = (),
+    artifacts: dict[str, str] | None = None,
+) -> BenchmarkReportDocument:
+    return BenchmarkReportDocument(
+        metadata=_metadata("benchmark"),
+        result=result,
+        tool_statuses=tool_statuses,
+        warnings=warnings,
+        artifacts=artifacts,
+    )
+
+
+def write_report_json(
+    document: AssessmentReportDocument | SecondaryStructureReportDocument | BenchmarkReportDocument,
+    output_file: str | Path,
+) -> Path:
     _validate_document(document)
     path = Path(output_file)
     try:
@@ -120,6 +147,15 @@ def write_secondary_structure_html_report(
 ) -> Path:
     _validate_document(document)
     html_report = _render_secondary_structure_html(document)
+    return _write_html(output_file, html_report)
+
+
+def write_benchmark_html_report(
+    document: BenchmarkReportDocument,
+    output_file: str | Path,
+) -> Path:
+    _validate_document(document)
+    html_report = _render_benchmark_html(document)
     return _write_html(output_file, html_report)
 
 
@@ -156,6 +192,11 @@ def _render_assessment_html(
                 ("SS Jaccard", f"{metrics.secondary_structure_jaccard:.4f}"),
             ]
         )
+    if metrics.molprobity is not None:
+        if metrics.molprobity.clashscore is not None:
+            summary_rows.append(("MolProbity clashscore", f"{metrics.molprobity.clashscore:.4f}"))
+        if metrics.molprobity.molprobity_score is not None:
+            summary_rows.append(("MolProbity score", f"{metrics.molprobity.molprobity_score:.4f}"))
 
     sections = [
         _html_header(
@@ -202,6 +243,71 @@ def _render_secondary_structure_html(
         _tool_table(document.tool_statuses),
         _warnings_block(document.warnings),
         _secondary_structure_section(comparison),
+        _artifacts_block(document.artifacts),
+        _html_footer(),
+    ]
+    return "\n".join(section for section in sections if section)
+
+
+def _render_benchmark_html(
+    document: BenchmarkReportDocument,
+) -> str:
+    result = document.result
+    succeeded = [entry for entry in result.entries if entry.metrics is not None]
+    mean_rmsd = _mean([entry.metrics.rmsd for entry in succeeded])
+    mean_lddt = _mean([entry.metrics.lddt for entry in succeeded])
+    best_rmsd = min((entry.metrics.rmsd for entry in succeeded), default=None)
+    best_lddt = max((entry.metrics.lddt for entry in succeeded), default=None)
+    best_ss = max(
+        (
+            entry.metrics.secondary_structure_f1
+            for entry in succeeded
+            if entry.metrics.secondary_structure_f1 is not None
+        ),
+        default=None,
+    )
+    best_clash = min(
+        (
+            entry.metrics.molprobity.clashscore
+            for entry in succeeded
+            if entry.metrics.molprobity is not None and entry.metrics.molprobity.clashscore is not None
+        ),
+        default=None,
+    )
+    summary_cards = "".join(
+        (
+            _metric_card("Predictions", str(result.total_predictions)),
+            _metric_card("Succeeded", str(result.succeeded)),
+            _metric_card("Failed", str(result.failed)),
+            _metric_card("Mean RMSD", _format_float(mean_rmsd)),
+            _metric_card("Mean lDDT", _format_float(mean_lddt)),
+            _metric_card("Best RMSD", _format_float(best_rmsd)),
+            _metric_card("Best lDDT", _format_float(best_lddt)),
+        )
+        + ((_metric_card("Best SS F1", _format_float(best_ss)),) if best_ss is not None else ())
+        + ((_metric_card("Best clashscore", _format_float(best_clash)),) if best_clash is not None else ())
+    )
+
+    rows = "".join(_benchmark_row(entry) for entry in result.entries)
+    sections = [
+        _html_header("RNA Kit Benchmark Dashboard", document.metadata),
+        (
+            "<section><h2>Benchmark Summary</h2>"
+            f"<p><strong>Reference:</strong> <code>{html.escape(result.reference or 'mixed')}</code></p>"
+            f"<div class='metric-grid'>{summary_cards}</div>"
+            "</section>"
+        ),
+        _tool_table(document.tool_statuses),
+        _warnings_block(document.warnings),
+        (
+            "<section><h2>Results</h2><table>"
+            "<thead><tr>"
+            "<th>Label</th><th>Prediction</th><th>Status</th><th>Matched</th>"
+            "<th>RMSD</th><th>INF_ALL</th><th>lDDT</th><th>SS F1</th>"
+            "<th>Clashscore</th><th>MolProbity score</th><th>Error</th>"
+            "</tr></thead>"
+            f"<tbody>{rows}</tbody></table></section>"
+        ),
         _artifacts_block(document.artifacts),
         _html_footer(),
     ]
@@ -565,7 +671,9 @@ def _library_version() -> str:
         return "0.0.0+local"
 
 
-def _validate_document(document: AssessmentReportDocument | SecondaryStructureReportDocument) -> None:
+def _validate_document(
+    document: AssessmentReportDocument | SecondaryStructureReportDocument | BenchmarkReportDocument,
+) -> None:
     metadata = getattr(document, "metadata", None)
     if metadata is None or not metadata.schema_version:
         raise SchemaValidationError("Report document is missing metadata.schema_version.")
@@ -647,3 +755,31 @@ def _lddt_color(score: float | None) -> str:
     hue = 8 + clamped * 122
     lightness = 92 - clamped * 28
     return f"hsl({hue:.0f}, 68%, {lightness:.0f}%)"
+
+
+def _benchmark_row(entry: BenchmarkEntry) -> str:
+    metrics = entry.metrics
+    molprobity = None if metrics is None else metrics.molprobity
+    return (
+        "<tr>"
+        f"<td>{html.escape(entry.label or '-')}</td>"
+        f"<td><code>{html.escape(entry.prediction)}</code></td>"
+        f"<td>{html.escape(entry.status)}</td>"
+        f"<td>{'-' if entry.matched_residues is None else entry.matched_residues}</td>"
+        f"<td>{_format_float(None if metrics is None else metrics.rmsd)}</td>"
+        f"<td>{_format_float(None if metrics is None else metrics.inf_all)}</td>"
+        f"<td>{_format_float(None if metrics is None else metrics.lddt)}</td>"
+        f"<td>{_format_float(None if metrics is None else metrics.secondary_structure_f1)}</td>"
+        f"<td>{_format_float(None if molprobity is None else molprobity.clashscore)}</td>"
+        f"<td>{_format_float(None if molprobity is None else molprobity.molprobity_score)}</td>"
+        f"<td>{html.escape(entry.error or '-')}</td>"
+        "</tr>"
+    )
+
+
+def _format_float(value: float | None) -> str:
+    return "-" if value is None else f"{value:.4f}"
+
+
+def _mean(values: list[float]) -> float | None:
+    return None if not values else sum(values) / len(values)

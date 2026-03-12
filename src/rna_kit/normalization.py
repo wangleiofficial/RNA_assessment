@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from .exceptions import NormalizationError
 from .resources import load_atom_mapping, load_residue_mapping
+from .structures import write_structure_as_pdb
 
 
 class PDBNormalizer:
@@ -38,7 +40,14 @@ class PDBNormalizer:
         output_path = Path(foutput)
         output_rows: list[str] = []
 
-        for raw_row in input_path.read_text(encoding="utf-8").splitlines():
+        if input_path.suffix.lower() in {".cif", ".mmcif"}:
+            with TemporaryDirectory(prefix="rna-kit-normalize-") as temp_dir:
+                converted = write_structure_as_pdb(input_path, Path(temp_dir) / "input.pdb")
+                input_rows = converted.read_text(encoding="utf-8").splitlines()
+        else:
+            input_rows = input_path.read_text(encoding="utf-8").splitlines()
+
+        for raw_row in input_rows:
             self._row_count += 1
             row = raw_row.rstrip("\n\r")
             rec_name = row[:6]

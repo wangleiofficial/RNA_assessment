@@ -18,12 +18,16 @@ from .metrics import (
     calculate_secondary_structure_comparison,
     calculate_interaction_network_fidelity,
     calculate_lddt,
+    calculate_lddt_from_prepared,
     calculate_rmsd,
     prepare_structure_pair,
 )
+from .molprobity import MolProbityRunner, calculate_molprobity
 from .reports import (
+    build_benchmark_report_document,
     build_assessment_report_document,
     build_secondary_structure_report_document,
+    write_benchmark_html_report,
     write_assessment_html_report,
     write_lddt_html_report,
     write_report_json,
@@ -80,7 +84,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tools_parser.add_argument("--cssr")
     tools_parser.add_argument("--mc-annotate")
+    tools_parser.add_argument("--molprobity")
     tools_parser.add_argument("--us-align")
+
+    molprobity_parser = subparsers.add_parser(
+        "molprobity",
+        help="Validate RNA geometry with MolProbity-compatible tools.",
+    )
+    molprobity_parser.add_argument("input")
+    molprobity_parser.add_argument("--molprobity")
 
     us_align_parser = subparsers.add_parser(
         "us-align",
@@ -132,9 +144,11 @@ def build_parser() -> argparse.ArgumentParser:
     assess_parser.add_argument("--inclusion-radius", type=float, default=15.0)
     assess_parser.add_argument("--per-residue", action="store_true")
     assess_parser.add_argument("--secondary-structure", action="store_true")
+    assess_parser.add_argument("--include-molprobity", action="store_true")
     assess_parser.add_argument("--secondary-structure-html")
     assess_parser.add_argument("--json-report")
     assess_parser.add_argument("--html-report")
+    assess_parser.add_argument("--molprobity")
 
     map_parser = subparsers.add_parser(
         "map",
@@ -158,9 +172,13 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--inclusion-radius", type=float, default=15.0)
     benchmark_parser.add_argument("--per-residue", action="store_true")
     benchmark_parser.add_argument("--secondary-structure", action="store_true")
+    benchmark_parser.add_argument("--include-molprobity", action="store_true")
+    benchmark_parser.add_argument("--molprobity")
+    benchmark_parser.add_argument("--json-report")
+    benchmark_parser.add_argument("--html-report")
     benchmark_parser.add_argument(
         "--sort-by",
-        choices=["input", "rmsd", "pvalue", "inf_all", "lddt", "secondary_structure_f1"],
+        choices=["input", "rmsd", "pvalue", "inf_all", "lddt", "secondary_structure_f1", "molprobity_clashscore"],
         default="input",
     )
     benchmark_parser.add_argument("--descending", action="store_true")
@@ -189,10 +207,19 @@ def main(argv: list[str] | None = None) -> int:
                 overrides={
                     "cssr": getattr(args, "cssr", None),
                     "mc_annotate": getattr(args, "mc_annotate", None),
+                    "molprobity": getattr(args, "molprobity", None),
                     "us_align": getattr(args, "us_align", None),
                 }
             )
             print(json.dumps({"tools": [asdict(item) for item in statuses]}, indent=2))
+            return 0
+
+        if args.command == "molprobity":
+            result = calculate_molprobity(
+                args.input,
+                runner=MolProbityRunner(binary_path=args.molprobity),
+            )
+            print(json.dumps(asdict(result), indent=2))
             return 0
 
         if args.command == "us-align":
@@ -204,6 +231,22 @@ def main(argv: list[str] | None = None) -> int:
             )
             payload = asdict(result)
             if args.html:
+                per_residue = None
+                try:
+                    prepared = prepare_structure_pair(
+                        args.native,
+                        None,
+                        args.prediction,
+                        None,
+                        resolve_sidecar_indices=False,
+                    )
+                    lddt_result = calculate_lddt_from_prepared(
+                        prepared,
+                        include_per_residue=True,
+                    )
+                    per_residue = lddt_result.per_residue
+                except RNAAssessmentError:
+                    per_residue = None
                 if result.superposed_prediction_output is None:
                     raise ReportGenerationError("US-align HTML output requires a persistent superposed structure.")
                 reference_view = result.reference_structure_output or args.native
@@ -213,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.html,
                     result=result,
                     title=args.title or "RNA Kit Structure Alignment",
+                    per_residue=per_residue,
                 )
                 payload["html_output"] = str(html_path)
             print(json.dumps(payload, indent=2))
@@ -351,8 +395,27 @@ def main(argv: list[str] | None = None) -> int:
                 include_per_residue=args.per_residue,
                 include_secondary_structure=args.secondary_structure,
                 secondary_structure_runner=secondary_structure_runner,
+                include_molprobity=args.include_molprobity,
+                molprobity_runner=MolProbityRunner(binary_path=args.molprobity) if args.include_molprobity else None,
             )
-            print(json.dumps(asdict(_sort_benchmark_result(result, args.sort_by, args.descending)), indent=2))
+            result = _sort_benchmark_result(result, args.sort_by, args.descending)
+            payload = asdict(result)
+            if args.json_report or args.html_report:
+                document = build_benchmark_report_document(
+                    result,
+                    tool_statuses=_tool_statuses(
+                        args,
+                        include_mc_annotate=True,
+                        include_molprobity=args.include_molprobity,
+                    ),
+                )
+                if args.json_report:
+                    json_path = write_report_json(document, args.json_report)
+                    payload["json_report_output"] = str(json_path)
+                if args.html_report:
+                    html_path = write_benchmark_html_report(document, args.html_report)
+                    payload["html_report_output"] = str(html_path)
+            print(json.dumps(payload, indent=2))
             return 0
 
         result = calculate_assessment(
@@ -366,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
             include_per_residue=args.per_residue,
             include_secondary_structure=args.secondary_structure,
             secondary_structure_runner=secondary_structure_runner,
+            include_molprobity=args.include_molprobity,
+            molprobity_runner=MolProbityRunner(binary_path=args.molprobity) if args.include_molprobity else None,
         )
         payload = asdict(result)
         if args.json_report or args.html_report or args.secondary_structure_html:
@@ -383,6 +448,8 @@ def main(argv: list[str] | None = None) -> int:
                 include_per_residue=args.per_residue or bool(args.html_report),
                 include_secondary_structure=args.secondary_structure,
                 secondary_structure_runner=secondary_structure_runner,
+                include_molprobity=args.include_molprobity,
+                molprobity_runner=MolProbityRunner(binary_path=args.molprobity) if args.include_molprobity else None,
             )
             payload = asdict(result)
             if not args.per_residue:
@@ -402,7 +469,11 @@ def main(argv: list[str] | None = None) -> int:
                     result,
                     reference=args.native,
                     prediction=args.prediction,
-                    tool_statuses=_tool_statuses(args, include_mc_annotate=True),
+                    tool_statuses=_tool_statuses(
+                        args,
+                        include_mc_annotate=True,
+                        include_molprobity=args.include_molprobity,
+                    ),
                     artifacts=artifacts or None,
                 )
                 if args.json_report:
@@ -468,11 +539,14 @@ def _tool_statuses(
     args: argparse.Namespace,
     *,
     include_mc_annotate: bool = False,
+    include_molprobity: bool = False,
 ):
     registry = default_tool_registry()
     requested = []
     if include_mc_annotate:
         requested.append(("mc_annotate", getattr(args, "mc_annotate", None)))
+    if include_molprobity:
+        requested.append(("molprobity", getattr(args, "molprobity", None)))
     return tuple(registry.status(key, override=override) for key, override in requested)
 
 
@@ -560,14 +634,23 @@ def _sort_benchmark_result(result, sort_by: str, descending: bool):
     if sort_by == "input":
         return result
 
+    def metric_value(entry):
+        if entry.metrics is None:
+            return (1, 0.0)
+        if sort_by == "molprobity_clashscore":
+            if entry.metrics.molprobity is None or entry.metrics.molprobity.clashscore is None:
+                return (1, 0.0)
+            value = entry.metrics.molprobity.clashscore
+        else:
+            value = getattr(entry.metrics, sort_by)
+            if value is None:
+                return (1, 0.0)
+        sort_value = -value if descending else value
+        return (0, sort_value)
+
     succeeded = [entry for entry in result.entries if entry.metrics is not None]
     failed = [entry for entry in result.entries if entry.metrics is None]
-    succeeded.sort(
-        key=lambda entry: (
-            getattr(entry.metrics, sort_by) if getattr(entry.metrics, sort_by) is not None else float("-inf")
-        ),
-        reverse=descending,
-    )
+    succeeded.sort(key=metric_value)
     return result.__class__(
         reference=result.reference,
         total_predictions=result.total_predictions,

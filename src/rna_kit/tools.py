@@ -131,9 +131,9 @@ def default_tool_registry() -> ToolRegistry:
             display_name="MolProbity",
             category="geometry_validation",
             env_var="RNA_KIT_MOLPROBITY",
-            path_names=("phenix.molprobity", "molprobity"),
+            path_names=("phenix.molprobity", "phenix.clashscore", "molprobity", "clashscore"),
             bundled_paths=(),
-            notes="Reserved for geometry validation and clash analysis.",
+            notes="Geometry validation and clash analysis.",
         ),
         ToolPluginSpec(
             key="us_align",

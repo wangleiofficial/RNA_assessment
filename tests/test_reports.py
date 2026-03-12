@@ -4,12 +4,15 @@ import json
 from pathlib import Path
 
 from rna_kit import (
+    build_benchmark_report_document,
     build_assessment_report_document,
     build_secondary_structure_report_document,
     calculate_assessment_from_prepared,
     calculate_lddt,
     prepare_structure_pair,
+    run_benchmark,
     write_assessment_html_report,
+    write_benchmark_html_report,
     write_lddt_html_report,
     write_report_json,
     write_secondary_structure_html_report,
@@ -136,3 +139,19 @@ def test_lddt_html_report_writes_per_residue_visualization(tmp_path: Path) -> No
     assert "Per-residue lDDT" in html_content
     assert "Residue Heatmap" in html_content
     assert "Local RMSD" in html_content
+
+
+def test_benchmark_report_writes_html_dashboard(tmp_path: Path) -> None:
+    result = run_benchmark(
+        native_file=DATA_DIR / "14_solution_0.pdb",
+        predictions=[DATA_DIR / "14_solution_0.pdb", DATA_DIR / "14_ChenPostExp_2.pdb"],
+        native_index=DATA_DIR / "14_solution_0.index",
+    )
+    document = build_benchmark_report_document(result)
+
+    html_path = write_benchmark_html_report(document, tmp_path / "benchmark.html")
+
+    html_content = html_path.read_text(encoding="utf-8")
+    assert "RNA Kit Benchmark Dashboard" in html_content
+    assert "Benchmark Summary" in html_content
+    assert "Results" in html_content

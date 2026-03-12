@@ -8,6 +8,7 @@ from pathlib import Path
 from .alignment import infer_structure_alignment
 from .exceptions import ManifestFormatError, RNAAssessmentError
 from .mc_annotate import MCAnnotateRunner
+from .molprobity import MolProbityRunner
 from .metrics import (
     AssessmentResult,
     PreparedStructurePair,
@@ -144,6 +145,8 @@ def run_benchmark(
     include_per_residue: bool = False,
     include_secondary_structure: bool = False,
     secondary_structure_runner: MCAnnotateRunner | None = None,
+    include_molprobity: bool = False,
+    molprobity_runner: MolProbityRunner | None = None,
 ) -> BenchmarkResult:
     if jobs is None:
         if native_file is None:
@@ -188,6 +191,8 @@ def run_benchmark(
                 include_per_residue=include_per_residue,
                 include_secondary_structure=include_secondary_structure,
                 secondary_structure_runner=secondary_structure_runner,
+                include_molprobity=include_molprobity,
+                molprobity_runner=molprobity_runner,
             )
             ready_entry = describe_prepared_pair(
                 prepared,

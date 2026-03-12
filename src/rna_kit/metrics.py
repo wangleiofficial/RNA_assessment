@@ -12,6 +12,7 @@ from Bio.PDB import PDBIO, Superimposer
 from .alignment import StructureAlignment, infer_structure_alignment
 from .exceptions import MetricCalculationError, SequenceMismatchError, ToolNotAvailableError
 from .mc_annotate import MCAnnotateRunner
+from .molprobity import MolProbityResult, MolProbityRunner
 from .secondary_structure import (
     SecondaryStructureComparisonResult,
     SecondaryStructureResult,
@@ -78,6 +79,7 @@ class AssessmentResult:
     secondary_structure_recall: float | None = None
     secondary_structure_f1: float | None = None
     secondary_structure_jaccard: float | None = None
+    molprobity: MolProbityResult | None = None
     secondary_structure: SecondaryStructureComparisonResult | None = None
     per_residue: tuple[ResidueAssessment, ...] | None = None
 
@@ -490,6 +492,20 @@ def calculate_lddt(
     )
 
 
+def calculate_lddt_from_prepared(
+    prepared: PreparedStructurePair,
+    inclusion_radius: float = 15.0,
+    include_per_residue: bool = False,
+) -> LDDTResult:
+    comparer = PDBComparer()
+    return comparer.lddt(
+        prepared.native,
+        prepared.prediction,
+        inclusion_radius=inclusion_radius,
+        include_per_residue=include_per_residue,
+    )
+
+
 def calculate_assessment(
     native_file: str | Path,
     native_index: str | Path | None,
@@ -501,6 +517,8 @@ def calculate_assessment(
     include_per_residue: bool = False,
     include_secondary_structure: bool = False,
     secondary_structure_runner: MCAnnotateRunner | None = None,
+    include_molprobity: bool = False,
+    molprobity_runner: MolProbityRunner | None = None,
 ) -> AssessmentResult:
     prepared = prepare_structure_pair(native_file, native_index, prediction_file, prediction_index)
     return calculate_assessment_from_prepared(
@@ -511,6 +529,8 @@ def calculate_assessment(
         include_per_residue=include_per_residue,
         include_secondary_structure=include_secondary_structure,
         secondary_structure_runner=secondary_structure_runner,
+        include_molprobity=include_molprobity,
+        molprobity_runner=molprobity_runner,
     )
 
 
@@ -522,6 +542,8 @@ def calculate_assessment_from_prepared(
     include_per_residue: bool = False,
     include_secondary_structure: bool = False,
     secondary_structure_runner: MCAnnotateRunner | None = None,
+    include_molprobity: bool = False,
+    molprobity_runner: MolProbityRunner | None = None,
 ) -> AssessmentResult:
     native, prediction = prepared.native, prepared.prediction
     comparer = PDBComparer()
@@ -542,6 +564,11 @@ def calculate_assessment_from_prepared(
             runner=secondary_structure_runner or annotator,
         )
         if include_secondary_structure
+        else None
+    )
+    molprobity_result = (
+        (molprobity_runner or MolProbityRunner()).validate(prediction.pdb_file)
+        if include_molprobity
         else None
     )
 
@@ -566,6 +593,7 @@ def calculate_assessment_from_prepared(
         secondary_structure_jaccard=(
             secondary_structure_result.jaccard if secondary_structure_result is not None else None
         ),
+        molprobity=molprobity_result,
         secondary_structure=secondary_structure_result,
         per_residue=lddt_result.per_residue,
     )

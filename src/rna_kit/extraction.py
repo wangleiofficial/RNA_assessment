@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from Bio.PDB import PDBIO, PDBParser, Select
+from Bio.PDB import PDBIO, Select
 
 from .exceptions import InvalidResidueRangeError
+from .structures import load_structure_file
 
 
 @dataclass(frozen=True)
@@ -50,8 +51,7 @@ def extract_pdb(
         for residue_id in range(residue_range.start, residue_range.start + residue_range.count)
     }
 
-    parser = PDBParser(QUIET=True)
-    structure = parser.get_structure("input", str(input_path))
+    structure = load_structure_file(input_path)
 
     class ResidueSelection(Select):
         def accept_residue(self, residue) -> int:

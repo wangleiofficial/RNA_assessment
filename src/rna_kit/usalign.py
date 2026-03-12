@@ -3,13 +3,14 @@ from __future__ import annotations
 import html
 import json
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .exceptions import ReportGenerationError, ToolExecutionError, ToolResolutionError
+from .metrics import ResidueAssessment
+from .structures import prepare_external_structure_input
 from .tools import default_tool_registry
 
 
@@ -165,6 +166,7 @@ def render_us_align_html(
     superposed_prediction_file: str | Path,
     result: USAlignResult,
     title: str = "RNA Kit Structure Alignment",
+    per_residue: tuple[ResidueAssessment, ...] | None = None,
 ) -> str:
     reference_path = Path(reference_file)
     superposed_prediction_path = Path(superposed_prediction_file)
@@ -186,6 +188,16 @@ def render_us_align_html(
     summary_html = "".join(
         f"<tr><th>{html.escape(label)}</th><td>{html.escape(value)}</td></tr>" for label, value in summary_rows
     )
+    residue_scores = [
+        {
+            "chain": item.prediction_chain,
+            "resi": item.prediction_pos,
+            "lddt": None if item.lddt is None else round(item.lddt, 4),
+            "color": _lddt_color(item.lddt),
+        }
+        for item in (per_residue or ())
+        if item.lddt is not None
+    ]
     alignment_block = ""
     if result.alignment_prediction and result.alignment_markup and result.alignment_reference:
         alignment_block = (
@@ -290,6 +302,7 @@ def render_us_align_html(
       flex-wrap: wrap;
       margin-top: 14px;
       font-size: 0.95rem;
+      align-items: center;
     }}
     .swatch {{
       width: 12px;
@@ -307,6 +320,18 @@ def render_us_align_html(
       background: #f8f5ee;
       border: 1px solid var(--line);
       font: 14px/1.45 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+    }}
+    .legend-scale {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    .legend-gradient {{
+      width: 150px;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: linear-gradient(90deg, {_lddt_color(0.0)}, {_lddt_color(0.5)}, {_lddt_color(1.0)});
     }}
     @media (max-width: 960px) {{
       main {{
@@ -333,7 +358,8 @@ def render_us_align_html(
         <div id="viewer"></div>
         <div class="legend">
           <span><span class="swatch" style="background: var(--reference);"></span>Reference structure</span>
-          <span><span class="swatch" style="background: var(--prediction);"></span>Prediction after US-align superposition</span>
+          <span><span class="swatch" style="background: var(--prediction);"></span>Prediction backbone</span>
+          {"<span class='legend-scale'><span>Prediction lDDT</span><span class='legend-gradient'></span><span>low → high</span></span>" if residue_scores else ""}
         </div>
       </div>
       <aside class="panel">
@@ -351,6 +377,7 @@ def render_us_align_html(
     const viewer = $3Dmol.createViewer("viewer", {{ backgroundColor: "white" }});
     const referencePdb = {json.dumps(reference_text)};
     const superposedPredictionPdb = {json.dumps(superposed_prediction_text)};
+    const residueScores = {json.dumps(residue_scores)};
     viewer.addModel(referencePdb, "pdb");
     viewer.setStyle({{ model: 0 }}, {{
       cartoon: {{ color: "{_css_color('reference')}", opacity: 0.9 }},
@@ -358,9 +385,16 @@ def render_us_align_html(
     }});
     viewer.addModel(superposedPredictionPdb, "pdb");
     viewer.setStyle({{ model: 1 }}, {{
-      cartoon: {{ color: "{_css_color('prediction')}", opacity: 0.45 }},
+      cartoon: {{ color: "{_css_color('prediction')}", opacity: 0.55 }},
       stick: {{ color: "{_css_color('prediction')}", radius: 0.14 }}
     }});
+    for (const item of residueScores) {{
+      const selection = {{ model: 1, chain: item.chain, resi: item.resi }};
+      viewer.setStyle(selection, {{
+        cartoon: {{ color: item.color, opacity: 0.92 }},
+        stick: {{ color: item.color, radius: 0.16 }}
+      }});
+    }}
     viewer.zoomTo();
     viewer.render();
   </script>
@@ -375,6 +409,7 @@ def write_us_align_html(
     output_file: str | Path,
     result: USAlignResult,
     title: str = "RNA Kit Structure Alignment",
+    per_residue: tuple[ResidueAssessment, ...] | None = None,
 ) -> Path:
     path = Path(output_file)
     html_output = render_us_align_html(
@@ -382,6 +417,7 @@ def write_us_align_html(
         superposed_prediction_file,
         result=result,
         title=title,
+        per_residue=per_residue,
     )
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -396,10 +432,8 @@ def _prepare_input_structure(
     target: Path,
     persist_artifacts: bool,
 ) -> Path:
-    if persist_artifacts:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        return target
+    if persist_artifacts or source.suffix.lower() in {".cif", ".mmcif"}:
+        return prepare_external_structure_input(source, target)
     return source
 
 
@@ -526,3 +560,12 @@ def _css_color(name: str) -> str:
     if name == "reference":
         return "#2f6db3"
     return "#d97706"
+
+
+def _lddt_color(score: float | None) -> str:
+    if score is None:
+        return "#d7dbe2"
+    clamped = max(0.0, min(1.0, score))
+    hue = 8 + clamped * 122
+    lightness = 84 - clamped * 24
+    return f"hsl({hue:.0f}, 72%, {lightness:.0f}%)"

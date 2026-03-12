@@ -327,6 +327,40 @@ def test_benchmark_cli_supports_csv_manifest(tmp_path: Path) -> None:
     assert payload["entries"][0]["metrics"]["rmsd"] == pytest.approx(0.0, abs=1e-8)
 
 
+def test_benchmark_cli_can_write_html_dashboard(tmp_path: Path) -> None:
+    html_report = tmp_path / "benchmark.html"
+    molprobity_path = _write_fake_molprobity_script(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "rna_kit",
+            "benchmark",
+            str(DATA_DIR / "14_solution_0.pdb"),
+            str(DATA_DIR / "14_ChenPostExp_2.pdb"),
+            "--native-index",
+            str(DATA_DIR / "14_solution_0.index"),
+            "--include-molprobity",
+            "--molprobity",
+            str(molprobity_path),
+            "--html-report",
+            str(html_report),
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["html_report_output"] == str(html_report)
+    content = html_report.read_text(encoding="utf-8")
+    assert "RNA Kit Benchmark Dashboard" in content
+    assert "Best clashscore" in content
+    assert "5.4200" in content
+
+
 def test_secondary_structure_cli_returns_json(tmp_path: Path) -> None:
     annotation_path = _write_mcout_file(
         tmp_path / "14_solution_0.pdb.mcout",
@@ -474,6 +508,60 @@ def test_tools_cli_reports_bundled_tools() -> None:
     assert tools["us_align"]["available"] is True
 
 
+def test_molprobity_cli_returns_json(tmp_path: Path) -> None:
+    molprobity_path = _write_fake_molprobity_script(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "rna_kit",
+            "molprobity",
+            str(DATA_DIR / "14_solution_0.pdb"),
+            "--molprobity",
+            str(molprobity_path),
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["clashscore"] == pytest.approx(5.42)
+    assert payload["molprobity_score"] == pytest.approx(2.11)
+
+
+def test_assess_cli_can_include_molprobity_metrics(tmp_path: Path) -> None:
+    molprobity_path = _write_fake_molprobity_script(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "rna_kit",
+            "assess",
+            str(DATA_DIR / "14_solution_0.pdb"),
+            str(DATA_DIR / "14_ChenPostExp_2.pdb"),
+            "--native-index",
+            str(DATA_DIR / "14_solution_0.index"),
+            "--prediction-index",
+            str(DATA_DIR / "14_ChenPostExp_2.index"),
+            "--include-molprobity",
+            "--molprobity",
+            str(molprobity_path),
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["molprobity"]["clashscore"] == pytest.approx(5.42)
+    assert payload["molprobity"]["molprobity_score"] == pytest.approx(2.11)
+
+
 def test_us_align_cli_can_write_html_viewer(tmp_path: Path) -> None:
     us_align_path = _write_fake_usalign_script(tmp_path)
     html_path = tmp_path / "us_align.html"
@@ -510,6 +598,8 @@ def test_us_align_cli_can_write_html_viewer(tmp_path: Path) -> None:
     assert Path(payload["reference_structure_output"]).exists()
     assert "3Dmol-min.js" in html_path.read_text(encoding="utf-8")
     assert "US-align Viewer" in html_path.read_text(encoding="utf-8")
+    assert "Prediction lDDT" in html_path.read_text(encoding="utf-8")
+    assert "const residueScores = [" in html_path.read_text(encoding="utf-8")
 
 
 def test_secondary_compare_cli_can_write_json_and_html_reports(tmp_path: Path) -> None:
@@ -648,6 +738,27 @@ def _write_fake_usalign_script(tmp_path: Path) -> Path:
                 "print('AACGAA')",
                 "print()",
                 "print('#Total CPU time is  0.01 seconds')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+    return script_path
+
+
+def _write_fake_molprobity_script(tmp_path: Path) -> Path:
+    script_path = tmp_path / "fake_molprobity.py"
+    script_path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env python3",
+                "print('All-atom clashscore = 5.42')",
+                "print('MolProbity score = 2.11')",
+                "print('Bad bonds = 1')",
+                "print('Bad angles = 3')",
+                "print('Pucker outliers = 2')",
+                "print('Suite outliers = 4')",
             ]
         )
         + "\n",

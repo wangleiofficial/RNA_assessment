@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rna_kit import USAlignResult, USAlignRunner, calculate_us_align, write_us_align_html
+from rna_kit import (
+    USAlignResult,
+    USAlignRunner,
+    calculate_lddt,
+    calculate_us_align,
+    write_us_align_html,
+)
 
+from .conftest import DATA_DIR, write_mmcif_from_pdb
 
 def test_usalign_runner_parses_metrics_and_extracts_superposed_model(tmp_path: Path) -> None:
     reference = tmp_path / "reference.pdb"
@@ -78,8 +85,55 @@ def test_write_us_align_html_embeds_viewer_and_metrics(tmp_path: Path) -> None:
     assert "box-sizing: border-box;" in content
 
 
+def test_write_us_align_html_can_color_prediction_by_lddt(tmp_path: Path) -> None:
+    reference = DATA_DIR / "14_solution_0.pdb"
+    prediction = DATA_DIR / "14_ChenPostExp_2.pdb"
+    output_dir = tmp_path / "alignment"
+    runner = USAlignRunner(binary_path=_write_fake_usalign_script(tmp_path))
+    result = calculate_us_align(reference, prediction, runner=runner, output_dir=output_dir)
+    lddt_result = calculate_lddt(
+        reference,
+        DATA_DIR / "14_solution_0.index",
+        prediction,
+        DATA_DIR / "14_ChenPostExp_2.index",
+        include_per_residue=True,
+    )
+    html_path = write_us_align_html(
+        result.reference_structure_output or reference,
+        result.superposed_prediction_output or prediction,
+        tmp_path / "viewer_colored.html",
+        result=result,
+        per_residue=lddt_result.per_residue,
+    )
+
+    content = html_path.read_text(encoding="utf-8")
+    assert "Prediction lDDT" in content
+    assert "const residueScores = [" in content
+    assert "viewer.setStyle(selection" in content
+
+
+def test_usalign_runner_converts_mmcif_inputs_to_pdb(tmp_path: Path) -> None:
+    reference = write_mmcif_from_pdb(DATA_DIR / "14_solution_0.pdb", tmp_path / "reference.cif")
+    prediction = write_mmcif_from_pdb(DATA_DIR / "14_ChenPostExp_2.pdb", tmp_path / "prediction.cif")
+    script_path = _write_fake_usalign_script(tmp_path)
+    output_dir = tmp_path / "alignment"
+
+    calculate_us_align(
+        reference,
+        prediction,
+        runner=USAlignRunner(binary_path=script_path),
+        output_dir=output_dir,
+    )
+
+    argv_log = (tmp_path / "usalign_seen_args.txt").read_text(encoding="utf-8")
+    first_line, second_line = argv_log.splitlines()[:2]
+    assert first_line.endswith(".pdb")
+    assert second_line.endswith(".pdb")
+
+
 def _write_fake_usalign_script(tmp_path: Path) -> Path:
     script_path = tmp_path / "fake_usalign.py"
+    argv_log = tmp_path / "usalign_seen_args.txt"
     script_path.write_text(
         "\n".join(
             [
@@ -89,6 +143,7 @@ def _write_fake_usalign_script(tmp_path: Path) -> Path:
                 "args = sys.argv[1:]",
                 "prediction = Path(args[0])",
                 "reference = Path(args[1])",
+                f"Path({str(argv_log)!r}).write_text(str(prediction) + '\\n' + str(reference) + '\\n', encoding='utf-8')",
                 "prefix = None",
                 "for index, arg in enumerate(args):",
                 "    if arg == '-o':",

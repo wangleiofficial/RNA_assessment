@@ -4,7 +4,7 @@ import pytest
 
 from rna_kit import calculate_assessment, calculate_interaction_network_fidelity, calculate_lddt, calculate_rmsd
 
-from .conftest import DATA_DIR
+from .conftest import DATA_DIR, write_mmcif_from_pdb
 
 
 def test_rmsd_self_comparison_is_zero() -> None:
@@ -90,3 +90,20 @@ def test_assessment_returns_combined_metrics() -> None:
     assert result.per_residue[0].matched_atoms > 0
     assert 0.0 <= result.per_residue[0].lddt <= 1.0
     assert result.per_residue[0].local_rmsd is not None
+
+
+def test_lddt_supports_mmcif_input(tmp_path) -> None:
+    native_cif = write_mmcif_from_pdb(DATA_DIR / "14_solution_0.pdb", tmp_path / "native.cif")
+    prediction_cif = write_mmcif_from_pdb(DATA_DIR / "14_ChenPostExp_2.pdb", tmp_path / "prediction.cif")
+
+    result = calculate_lddt(
+        native_cif,
+        DATA_DIR / "14_solution_0.index",
+        prediction_cif,
+        DATA_DIR / "14_ChenPostExp_2.index",
+        include_per_residue=True,
+    )
+
+    assert 0.0 <= result.lddt <= 1.0
+    assert result.per_residue is not None
+    assert len(result.per_residue) == 60

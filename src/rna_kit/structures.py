@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from Bio.PDB import PDBParser
+from Bio.PDB import MMCIFParser, PDBIO, PDBParser
 
 
 @dataclass(frozen=True)
@@ -34,8 +34,7 @@ class PDBStructure:
 
     def load(self, pdb_file: str | Path, index_name: str | Path | None = None) -> bool:
         self._pdb_file = Path(pdb_file)
-        parser = PDBParser(QUIET=True)
-        self._structure = parser.get_structure("structure", str(self._pdb_file))
+        self._structure = load_structure_file(self._pdb_file)
         self._residues = []
         self._selected_indices = []
         self._residue_index = {}
@@ -180,3 +179,41 @@ class PDBStructure:
     def _absolute_index(self, chain: str, pos: int) -> int | None:
         entry = self._residue_index.get(f"{chain}:{pos}")
         return None if entry is None else int(entry[0])
+
+
+def load_structure_file(pdb_file: str | Path):
+    path = Path(pdb_file)
+    parser = _structure_parser_for(path)
+    return parser.get_structure("structure", str(path))
+
+
+def write_structure_as_pdb(source_file: str | Path, output_file: str | Path):
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    io = PDBIO()
+    io.set_structure(load_structure_file(source_file))
+    io.save(str(output_path))
+    return output_path
+
+
+def prepare_external_structure_input(
+    source_file: str | Path,
+    output_file: str | Path,
+):
+    source_path = Path(source_file)
+    output_path = Path(output_file)
+    if _is_mmcif_path(source_path):
+        return write_structure_as_pdb(source_path, output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(source_path.read_bytes())
+    return output_path
+
+
+def _structure_parser_for(path: Path):
+    if _is_mmcif_path(path):
+        return MMCIFParser(QUIET=True)
+    return PDBParser(QUIET=True)
+
+
+def _is_mmcif_path(path: Path) -> bool:
+    return path.suffix.lower() in {".cif", ".mmcif"}
