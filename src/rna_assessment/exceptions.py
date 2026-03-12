@@ -19,3 +19,7 @@ class SequenceMismatchError(RNAAssessmentError):
 
 class ToolNotAvailableError(RNAAssessmentError):
     """Raised when an optional third-party tool cannot be resolved or executed."""
+
+
+class MetricCalculationError(RNAAssessmentError):
+    """Raised when a metric cannot be computed from the provided structures."""

@@ -7,7 +7,7 @@ from dataclasses import asdict
 from .api import extract_structure, normalize_structure
 from .exceptions import RNAAssessmentError
 from .mc_annotate import MCAnnotateRunner
-from .metrics import calculate_interaction_network_fidelity, calculate_rmsd
+from .metrics import calculate_assessment, calculate_interaction_network_fidelity, calculate_lddt, calculate_rmsd
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,6 +37,24 @@ def build_parser() -> argparse.ArgumentParser:
     inf_parser.add_argument("prediction_index")
     inf_parser.add_argument("--mc-annotate")
     inf_parser.add_argument("--annotation-cache-dir")
+    inf_parser.add_argument("--native-annotation")
+    inf_parser.add_argument("--prediction-annotation")
+
+    lddt_parser = subparsers.add_parser("lddt", help="Calculate all-atom lDDT.")
+    _add_structure_pair_arguments(lddt_parser)
+    lddt_parser.add_argument("--inclusion-radius", type=float, default=15.0)
+
+    assess_parser = subparsers.add_parser(
+        "assess",
+        help="Calculate RMSD, P-value, INF and lDDT for a reference/prediction pair.",
+    )
+    _add_structure_pair_arguments(assess_parser)
+    assess_parser.add_argument("--pvalue-mode", default="-", choices=["+", "-"])
+    assess_parser.add_argument("--mc-annotate")
+    assess_parser.add_argument("--annotation-cache-dir")
+    assess_parser.add_argument("--native-annotation")
+    assess_parser.add_argument("--prediction-annotation")
+    assess_parser.add_argument("--inclusion-radius", type=float, default=15.0)
 
     return parser
 
@@ -67,21 +85,63 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(asdict(result), indent=2))
             return 0
 
-        annotator = MCAnnotateRunner(
-            binary_path=args.mc_annotate,
-            cache_dir=args.annotation_cache_dir,
-        )
-        result = calculate_interaction_network_fidelity(
+        if args.command == "lddt":
+            result = calculate_lddt(
+                args.native,
+                args.native_index,
+                args.prediction,
+                args.prediction_index,
+                inclusion_radius=args.inclusion_radius,
+            )
+            print(json.dumps(asdict(result), indent=2))
+            return 0
+
+        annotator = _build_annotator(args)
+        if args.command == "inf":
+            result = calculate_interaction_network_fidelity(
+                args.native,
+                args.native_index,
+                args.prediction,
+                args.prediction_index,
+                annotator=annotator,
+            )
+            print(json.dumps(asdict(result), indent=2))
+            return 0
+
+        result = calculate_assessment(
             args.native,
             args.native_index,
             args.prediction,
             args.prediction_index,
+            pvalue_mode=args.pvalue_mode,
             annotator=annotator,
+            inclusion_radius=args.inclusion_radius,
         )
         print(json.dumps(asdict(result), indent=2))
         return 0
     except RNAAssessmentError as exc:
         parser.exit(1, f"{exc}\n")
+
+
+def _add_structure_pair_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("native")
+    parser.add_argument("prediction")
+    parser.add_argument("--native-index")
+    parser.add_argument("--prediction-index")
+
+
+def _build_annotator(args: argparse.Namespace) -> MCAnnotateRunner:
+    annotation_overrides = {}
+    if getattr(args, "native_annotation", None):
+        annotation_overrides[args.native] = args.native_annotation
+    if getattr(args, "prediction_annotation", None):
+        annotation_overrides[args.prediction] = args.prediction_annotation
+
+    return MCAnnotateRunner(
+        binary_path=getattr(args, "mc_annotate", None),
+        cache_dir=getattr(args, "annotation_cache_dir", None),
+        annotation_overrides=annotation_overrides or None,
+    )
 
 
 if __name__ == "__main__":

@@ -38,16 +38,28 @@ class MCAnnotateRunner:
         r"^([A-Z]|'[0-9]'|)(\d+)-([A-Z]|'[0-9]'|)(\d+) :.*(inward|upward|downward|outward).*"
     )
 
-    def __init__(self, binary_path: str | Path | None = None, cache_dir: str | Path | None = None):
+    def __init__(
+        self,
+        binary_path: str | Path | None = None,
+        cache_dir: str | Path | None = None,
+        annotation_overrides: dict[str | Path, str | Path] | None = None,
+    ):
         self.binary_path = Path(binary_path) if binary_path else None
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self._cache: dict[Path, MCAnnotateResult] = {}
+        self.annotation_overrides = {
+            _normalize_path(pdb_file): Path(annotation_file)
+            for pdb_file, annotation_file in (annotation_overrides or {}).items()
+        }
 
     def cache_key(self, pdb_file: str | Path) -> str:
         return f"mc_annotate::{self.annotation_path_for(pdb_file)}"
 
     def annotation_path_for(self, pdb_file: str | Path) -> Path:
-        pdb_path = Path(pdb_file)
+        pdb_path = _normalize_path(pdb_file)
+        overridden = self.annotation_overrides.get(pdb_path)
+        if overridden is not None:
+            return overridden
         cache_dir = self.cache_dir or pdb_path.parent
         return cache_dir / f"{pdb_path.name}.mcout"
 
@@ -240,3 +252,7 @@ class MCAnnotate(MCAnnotateRunner):
 
 def _repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _normalize_path(path: str | Path) -> Path:
+    return Path(path).expanduser().resolve()

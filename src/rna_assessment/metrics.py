@@ -9,7 +9,7 @@ from pathlib import Path
 
 from Bio.PDB import PDBIO, Superimposer
 
-from .exceptions import SequenceMismatchError, ToolNotAvailableError
+from .exceptions import MetricCalculationError, SequenceMismatchError, ToolNotAvailableError
 from .mc_annotate import MCAnnotateRunner
 from .structures import PDBStructure
 
@@ -28,6 +28,28 @@ class InteractionNetworkResult:
     inf_wc: float
     inf_nwc: float
     inf_stack: float
+
+
+@dataclass(frozen=True)
+class LDDTResult:
+    lddt: float
+    evaluated_atoms: int
+    evaluated_pairs: int
+    inclusion_radius: float
+
+
+@dataclass(frozen=True)
+class AssessmentResult:
+    rmsd: float
+    pvalue: float
+    deformation_index: float
+    inf_all: float
+    inf_wc: float
+    inf_nwc: float
+    inf_stack: float
+    lddt: float
+    lddt_evaluated_atoms: int
+    lddt_evaluated_pairs: int
 
 
 def erf(z: float) -> float:
@@ -68,6 +90,7 @@ class PDBComparer:
     BACKBONE_ATOMS = ["C1'", "C2'", "C3'", "C4'", "C5'", "O2'", "O3'", "O4'", "O5'", "OP1", "OP2", "P"]
     HEAVY_ATOMS = ["C2", "C4", "C5", "C6", "C8", "N1", "N2", "N3", "N4", "N6", "N7", "N9", "O2", "O4", "O6"]
     ALL_ATOMS = BACKBONE_ATOMS + HEAVY_ATOMS
+    LDDT_THRESHOLDS = (0.5, 1.0, 2.0, 4.0)
 
     def rmsd(self, src_struct: PDBStructure, trg_struct: PDBStructure, fit_pdb: str | Path | None = None) -> float:
         src_atoms, trg_atoms = self._get_atoms_struct(self.ALL_ATOMS, src_struct.res_sequence(), trg_struct.res_sequence())
@@ -116,6 +139,64 @@ class PDBComparer:
         precision = true_positives / float(true_positives + false_positives)
         sensitivity = true_positives / float(true_positives + false_negatives)
         return math.sqrt(precision * sensitivity)
+
+    def lddt(
+        self,
+        reference_struct: PDBStructure,
+        model_struct: PDBStructure,
+        inclusion_radius: float = 15.0,
+        thresholds: tuple[float, ...] = LDDT_THRESHOLDS,
+    ) -> LDDTResult:
+        reference_atoms, model_atoms = self._get_atoms_struct(
+            self.ALL_ATOMS,
+            reference_struct.res_sequence(),
+            model_struct.res_sequence(),
+        )
+
+        if not reference_atoms:
+            raise MetricCalculationError("No matched atoms available for lDDT calculation.")
+
+        reference_coords = [tuple(float(value) for value in atom.get_coord()) for atom in reference_atoms]
+        model_coords = [tuple(float(value) for value in atom.get_coord()) for atom in model_atoms]
+
+        scored_atoms = 0
+        total_pairs = 0
+        total_score = 0.0
+        threshold_count = float(len(thresholds))
+
+        for atom_index, reference_coord in enumerate(reference_coords):
+            atom_pairs = 0
+            atom_score = 0.0
+
+            for neighbor_index, neighbor_coord in enumerate(reference_coords):
+                if atom_index == neighbor_index:
+                    continue
+
+                reference_distance = math.dist(reference_coord, neighbor_coord)
+                if reference_distance == 0.0 or reference_distance > inclusion_radius:
+                    continue
+
+                model_distance = math.dist(model_coords[atom_index], model_coords[neighbor_index])
+                delta = abs(reference_distance - model_distance)
+                atom_score += sum(delta <= threshold for threshold in thresholds) / threshold_count
+                atom_pairs += 1
+
+            if atom_pairs == 0:
+                continue
+
+            scored_atoms += 1
+            total_pairs += atom_pairs
+            total_score += atom_score / atom_pairs
+
+        if scored_atoms == 0:
+            raise MetricCalculationError("No eligible atom pairs within the lDDT inclusion radius.")
+
+        return LDDTResult(
+            lddt=total_score / scored_atoms,
+            evaluated_atoms=scored_atoms,
+            evaluated_pairs=total_pairs,
+            inclusion_radius=inclusion_radius,
+        )
 
     def mcq(self, model_file: str | Path, target_file: str | Path, jar_path: str | Path | None = None) -> float:
         jar = Path(jar_path) if jar_path else _default_jar_path("mcq.ws.client-0.0.1-SNAPSHOT-jar-with-dependencies.jar")
@@ -229,6 +310,49 @@ def calculate_interaction_network_fidelity(
         inf_wc=comparer.inf(prediction, native, interaction_type="PAIR_2D", annotator=annotator),
         inf_nwc=comparer.inf(prediction, native, interaction_type="PAIR_3D", annotator=annotator),
         inf_stack=comparer.inf(prediction, native, interaction_type="STACK", annotator=annotator),
+    )
+
+
+def calculate_lddt(
+    native_file: str | Path,
+    native_index: str | Path | None,
+    prediction_file: str | Path,
+    prediction_index: str | Path | None,
+    inclusion_radius: float = 15.0,
+) -> LDDTResult:
+    native, prediction = _load_pair(native_file, native_index, prediction_file, prediction_index)
+    comparer = PDBComparer()
+    return comparer.lddt(native, prediction, inclusion_radius=inclusion_radius)
+
+
+def calculate_assessment(
+    native_file: str | Path,
+    native_index: str | Path | None,
+    prediction_file: str | Path,
+    prediction_index: str | Path | None,
+    pvalue_mode: str = "-",
+    annotator: MCAnnotateRunner | None = None,
+    inclusion_radius: float = 15.0,
+) -> AssessmentResult:
+    native, prediction = _load_pair(native_file, native_index, prediction_file, prediction_index)
+    comparer = PDBComparer()
+
+    rmsd_value = comparer.rmsd(prediction, native)
+    pvalue = comparer.pvalue(rmsd_value, len(prediction.raw_sequence()), pvalue_mode)
+    inf_all = comparer.inf(prediction, native, interaction_type="ALL", annotator=annotator)
+    lddt_result = comparer.lddt(native, prediction, inclusion_radius=inclusion_radius)
+
+    return AssessmentResult(
+        rmsd=rmsd_value,
+        pvalue=pvalue,
+        deformation_index=rmsd_value / inf_all,
+        inf_all=inf_all,
+        inf_wc=comparer.inf(prediction, native, interaction_type="PAIR_2D", annotator=annotator),
+        inf_nwc=comparer.inf(prediction, native, interaction_type="PAIR_3D", annotator=annotator),
+        inf_stack=comparer.inf(prediction, native, interaction_type="STACK", annotator=annotator),
+        lddt=lddt_result.lddt,
+        lddt_evaluated_atoms=lddt_result.evaluated_atoms,
+        lddt_evaluated_pairs=lddt_result.evaluated_pairs,
     )
 
 

@@ -4,9 +4,13 @@ from pathlib import Path
 
 from .extraction import extract_pdb
 from .metrics import (
+    AssessmentResult,
     InteractionNetworkResult,
+    LDDTResult,
     RMSDResult,
+    calculate_assessment,
     calculate_interaction_network_fidelity,
+    calculate_lddt,
     calculate_rmsd,
 )
 from .normalization import PDBNormalizer
@@ -30,9 +34,13 @@ def extract_structure(
 
 
 __all__ = [
+    "AssessmentResult",
     "InteractionNetworkResult",
+    "LDDTResult",
     "RMSDResult",
+    "calculate_assessment",
     "calculate_interaction_network_fidelity",
+    "calculate_lddt",
     "calculate_rmsd",
     "extract_structure",
     "normalize_structure",

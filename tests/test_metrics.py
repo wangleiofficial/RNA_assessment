@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from rna_assessment import calculate_interaction_network_fidelity, calculate_rmsd
+from rna_assessment import calculate_assessment, calculate_interaction_network_fidelity, calculate_lddt, calculate_rmsd
 
 from .conftest import DATA_DIR
 
@@ -48,3 +48,32 @@ def test_cross_structure_metrics_are_finite() -> None:
     assert result.inf_wc == pytest.approx(0.9375)
     assert result.inf_nwc == pytest.approx(0.25)
     assert result.inf_stack == pytest.approx(0.7082882469748285)
+
+
+def test_lddt_self_comparison_is_one() -> None:
+    result = calculate_lddt(
+        DATA_DIR / "14_solution_0.pdb",
+        DATA_DIR / "14_solution_0.index",
+        DATA_DIR / "14_solution_0.pdb",
+        DATA_DIR / "14_solution_0.index",
+    )
+
+    assert result.lddt == pytest.approx(1.0, abs=1e-8)
+    assert result.evaluated_atoms > 0
+    assert result.evaluated_pairs > 0
+
+
+def test_assessment_returns_combined_metrics() -> None:
+    result = calculate_assessment(
+        DATA_DIR / "14_solution_0.pdb",
+        DATA_DIR / "14_solution_0.index",
+        DATA_DIR / "14_ChenPostExp_2.pdb",
+        DATA_DIR / "14_ChenPostExp_2.index",
+    )
+
+    assert result.rmsd == pytest.approx(7.751173243045826)
+    assert result.pvalue == pytest.approx(7.327471962526033e-15)
+    assert result.inf_all == pytest.approx(0.7282347248904991)
+    assert result.lddt == pytest.approx(0.6126129382795444)
+    assert result.lddt_evaluated_atoms == 1287
+    assert result.lddt_evaluated_pairs == 338908
