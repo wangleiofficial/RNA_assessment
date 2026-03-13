@@ -2,9 +2,25 @@
 
 ## Installation
 
-Create a virtual environment and install the package:
+For regular use, install `rna-kit` online with `pip` directly from GitHub:
 
 ```bash
+python -m pip install "git+https://github.com/wangleiofficial/rna-kit.git"
+```
+
+This gives you the CLI immediately:
+
+```bash
+rna-kit --help
+```
+
+`pip install rna-kit` is not documented here because the package is not currently published on PyPI.
+
+If you want a local development checkout instead:
+
+```bash
+git clone https://github.com/wangleiofficial/rna-kit.git
+cd rna-kit
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
@@ -14,12 +30,6 @@ If you also want to build the documentation site locally:
 
 ```bash
 python -m pip install -e '.[docs]'
-```
-
-Main CLI:
-
-```bash
-rna-kit --help
 ```
 
 ## Optional: Install Phenix / MolProbity

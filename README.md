@@ -105,6 +105,8 @@ The project now includes a dedicated documentation site built with `MkDocs Mater
 To preview the site locally:
 
 ```bash
+git clone https://github.com/wangleiofficial/rna-kit.git
+cd rna-kit
 python -m pip install -e '.[docs]'
 mkdocs serve
 ```
@@ -112,16 +114,28 @@ mkdocs serve
 <a id="installation"></a>
 ## Installation
 
+For regular users, install `rna-kit` online with `pip` directly from GitHub:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install "git+https://github.com/wangleiofficial/rna-kit.git"
 ```
 
-Main CLI:
+This gives you the CLI immediately:
 
 ```bash
 rna-kit --help
+```
+
+`pip install rna-kit` is not documented here because the package is not currently published on PyPI.
+
+If you want a local development checkout instead:
+
+```bash
+git clone https://github.com/wangleiofficial/rna-kit.git
+cd rna-kit
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
 ```
 
 ### Optional: Install Phenix / MolProbity

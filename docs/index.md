@@ -37,12 +37,10 @@
 
 ## Quick Start
 
-Install the package and documentation dependencies:
+Install the package online with `pip` directly from GitHub:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev,docs]'
+python -m pip install "git+https://github.com/wangleiofficial/rna-kit.git"
 ```
 
 Run the main single-pair evaluation:
@@ -59,6 +57,11 @@ rna-kit assess \
 Build and preview the documentation locally:
 
 ```bash
+git clone https://github.com/wangleiofficial/rna-kit.git
+cd rna-kit
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[docs]'
 mkdocs serve
 ```
 
