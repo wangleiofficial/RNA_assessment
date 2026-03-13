@@ -9,7 +9,7 @@ description = "RNA structure normalization, alignment, and evaluation toolkit."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{ name = "RNA-Puzzles contributors" }]
+authors = [{ name = "Wang Lei" }]
 dependencies = ["biopython>=1.83"]
 
 [project.optional-dependencies]
