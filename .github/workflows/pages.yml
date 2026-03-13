@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PAGES_ADMIN_TOKEN: ${{ secrets.PAGES_ADMIN_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -32,14 +34,14 @@ jobs:
           python -m pip install -e ".[docs]"
 
       - name: Configure GitHub Pages (bootstrap)
-        if: ${{ secrets.PAGES_ADMIN_TOKEN != '' }}
+        if: ${{ env.PAGES_ADMIN_TOKEN != '' }}
         uses: actions/configure-pages@v5
         with:
-          token: ${{ secrets.PAGES_ADMIN_TOKEN }}
+          token: ${{ env.PAGES_ADMIN_TOKEN }}
           enablement: true
 
       - name: Configure GitHub Pages
-        if: ${{ secrets.PAGES_ADMIN_TOKEN == '' }}
+        if: ${{ env.PAGES_ADMIN_TOKEN == '' }}
         uses: actions/configure-pages@v5
 
       - name: Build documentation site
