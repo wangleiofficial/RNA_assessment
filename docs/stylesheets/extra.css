@@ -1,0 +1,19 @@
+.hero {
+  padding: 1.5rem 0 0.5rem;
+}
+
+.hero-badges img {
+  margin: 0 0.35rem 0.5rem 0;
+}
+
+.hero-lead {
+  font-size: 1.15rem;
+  max-width: 48rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}

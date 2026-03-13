@@ -5,6 +5,7 @@
 ![CLI](https://img.shields.io/badge/CLI-rna--kit-1F6FEB)
 ![RNA](https://img.shields.io/badge/RNA-Structure%20Evaluation-CB6D51)
 ![HTML](https://img.shields.io/badge/Reports-HTML%20%2B%20JSON-0F766E)
+[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-1F883D?logo=github&logoColor=white)](https://wangleiofficial.github.io/rna-kit/)
 
 **rna-kit** is a toolkit for RNA structure normalization, residue mapping, scoring, benchmarking, and HTML reporting.
 It is designed for the common workflow: take a native RNA structure, take one or more predicted structures, and generate reproducible evaluation results without hand-editing scripts.
@@ -12,6 +13,8 @@ It is designed for the common workflow: take a native RNA structure, take one or
 ## Quick Navigation
 
 - [What It Does](#what-it-does)
+- [Platform Support](#platform-support)
+- [Documentation Site](#documentation-site)
 - [Installation](#installation)
 - [Start Here](#start-here)
 - [Core Concepts](#core-concepts)
@@ -57,6 +60,53 @@ It is designed for the common workflow: take a native RNA structure, take one or
 - per-target benchmark detail pages linked from the batch dashboard
 - batch benchmarking from direct inputs or CSV/JSON manifests
 - GitHub release notes with a platform support matrix
+
+<a id="platform-support"></a>
+## Platform Support
+
+### Core Runtime
+
+![Linux](https://img.shields.io/badge/Linux-supported-2EA44F?logo=linux&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-supported-0078D4?logo=windows&logoColor=white)
+![HTML Reports](https://img.shields.io/badge/HTML%20Reports-local%20browser%20support-0F766E?logo=html5&logoColor=white)
+
+- The pure Python core works on Linux, macOS, and Windows
+- `PDB` input is supported natively, and `mmCIF` is converted automatically when external tools require `PDB`
+- HTML reports open locally in a browser without a running server
+
+### Optional Tooling
+
+![Arena](https://img.shields.io/badge/Arena-Linux%20%26%20macOS%20auto--build-1F6FEB)
+![MC-Annotate](https://img.shields.io/badge/MC--Annotate-Linux%20bundled-8B5CF6)
+![US-align](https://img.shields.io/badge/US--align-bundled%20on%20all%20platforms-C2410C)
+![MolProbity](https://img.shields.io/badge/MolProbity%20%2F%20Phenix-external%20install-4D7C0F)
+
+- `Arena`: auto-builds from source on Linux and macOS; on Windows, provide your own executable
+- `MC-Annotate`: bundled and tested on Linux; on macOS and Windows, use precomputed `.mcout` files or provide your own binary
+- `US-align`: bundled for Linux, macOS, and Windows
+- `MolProbity / Phenix`: not bundled; supported on any platform where the command-line tools are installed
+
+Detailed notes:
+- [docs/platform-support.md](docs/platform-support.md)
+
+<a id="documentation-site"></a>
+## Documentation Site
+
+The project now includes a dedicated documentation site built with `MkDocs Material`.
+
+- source pages live in [docs/](docs/)
+- the site configuration is in [mkdocs.yml](mkdocs.yml)
+- GitHub Pages deployment is handled by [.github/workflows/pages.yml](.github/workflows/pages.yml)
+- the published site URL is `https://wangleiofficial.github.io/rna-kit/`
+- enable **Settings > Pages > Build and deployment > Source = GitHub Actions** once in the repository settings
+
+To preview the site locally:
+
+```bash
+python -m pip install -e '.[docs]'
+mkdocs serve
+```
 
 <a id="installation"></a>
 ## Installation

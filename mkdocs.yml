@@ -1,0 +1,41 @@
+site_name: RNA Kit
+site_description: RNA structure normalization, mapping, assessment, benchmarking, and reporting toolkit.
+site_url: https://wangleiofficial.github.io/rna-kit/
+repo_url: https://github.com/wangleiofficial/rna-kit
+repo_name: wangleiofficial/rna-kit
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+    - search.suggest
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Platform Support: platform-support.md
