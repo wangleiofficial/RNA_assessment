@@ -27,6 +27,14 @@
 - `benchmark` for manifest-driven batch evaluation and HTML dashboards
 - `us-align` for global RNA superposition plus browser-based 3D visualization
 
+## Documentation Map
+
+- [Getting Started](getting-started.md): installation, optional Phenix setup, and first commands
+- [Core Concepts and Commands](core-concepts.md): what `normalize`, `map`, `assess`, `lddt`, `secondary-compare`, `us-align`, and `benchmark` actually do
+- [Assessment and Mapping Reference](assessment-reference.md): `assess` output fields, `.index` behavior, sequence-guided mapping, and HTML report types
+- [Workflows and Benchmarking](workflows-and-benchmarking.md): common workflows, manifest formats, and benchmark output structure
+- [Tooling, API, and Project Layout](tooling-and-api.md): external tool resolution, Python API, release notes, acknowledgments, and repository structure
+
 ## Quick Start
 
 Install the package and documentation dependencies:

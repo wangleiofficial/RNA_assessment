@@ -38,4 +38,9 @@ extra_css:
 
 nav:
   - Home: index.md
+  - Getting Started: getting-started.md
+  - Core Concepts and Commands: core-concepts.md
+  - Assessment and Mapping Reference: assessment-reference.md
+  - Workflows and Benchmarking: workflows-and-benchmarking.md
+  - Tooling, API, and Project Layout: tooling-and-api.md
   - Platform Support: platform-support.md
